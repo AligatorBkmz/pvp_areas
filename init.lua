@@ -2,14 +2,33 @@
 -- Original   : Copyright 2016 James Stevenson (everamzah)
 -- Additional : Copyright Tai Kedzierski (DuCake)
 -- LGPL v2.1+
+pvp_areas={}
+pvp_areas_table = {}
+mod_storage = minetest.get_mod_storage()
 
 local pvp_areas_worlddir = minetest.get_worldpath()
 local pvp_areas_modname = minetest.get_current_modname()
 
 local hasareasmod = minetest.get_modpath("areas")
-
+pvp_areas.modpath = minetest.get_modpath("pvp_areas")
+dofile(pvp_areas.modpath.."/api.lua")
+dofile(pvp_areas.modpath.."/block.lua")
 -- The settings object
 local settings = {}
+--pvp_areas={}
+
+local function mysplit (inputstr, sep)
+ if sep == nil then
+  sep = "%s"
+ end
+ local t={}
+ for str in string.gmatch(inputstr, "([^"..sep.."]+)") do
+   table.insert(t, str)
+ end
+ return t
+end
+
+
 if minetest.settings then
 	settings = minetest.settings
 else
@@ -37,26 +56,26 @@ local area_label = settings:get("pvp_areas.label") or "Defined area."
 -- if false Mob does Damage
 local mobsDoNoDamage = false
 
-local pvp_areas_store = AreaStore()
+pvp_areas_store = AreaStore()
 pvp_areas_store:from_file(pvp_areas_worlddir .. "/pvp_areas_store.dat")
 
 local pvp_default = minetest.is_yes(settings:get_bool("pvp_areas.enable_pvp"))
 minetest.log("action", "[" .. pvp_areas_modname .. "] PvP by Default: " .. tostring(pvp_default))
 
 local pvp_areas_players = {}
-local pvp_areas = {}
+--pvp_areas_table = {}
 
-local function update_pvp_areas()
+function pvp_areas:update_pvp_areas()
 	local counter = 0
-	pvp_areas = {}
+	pvp_areas_table = {}
 	while pvp_areas_store:get_area(counter) do
-		table.insert(pvp_areas, pvp_areas_store:get_area(counter))
+		table.insert(pvp_areas_table, pvp_areas_store:get_area(counter))
 		counter = counter + 1
 	end
 end
-update_pvp_areas()
+pvp_areas:update_pvp_areas()
 
-local function save_pvp_areas()
+function pvp_areas:save_pvp_areas()
 	pvp_areas_store:to_file(pvp_areas_worlddir .. "/pvp_areas_store.dat")
 end
 
@@ -97,10 +116,10 @@ minetest.register_chatcommand("pvp_areas", {
 			elseif not pvp_areas_players[name].pos2 then
 				minetest.chat_send_player(name, "Position 2 missing, use \"/pvp_areas pos2\" to set.")
 			else
-				pvp_areas_store:insert_area(pvp_areas_players[name].pos1, pvp_areas_players[name].pos2, "pvp_areas", #pvp_areas)
-				table.insert(pvp_areas, pvp_areas_store:get_area(#pvp_areas))
-				update_pvp_areas()
-				save_pvp_areas()
+				pvp_areas_store:insert_area(pvp_areas_players[name].pos1, pvp_areas_players[name].pos2, "pvp_areas", #pvp_areas_table)
+				table.insert(pvp_areas_table, pvp_areas_store:get_area(#pvp_areas_table))
+				pvp_areas:update_pvp_areas()
+				pvp_areas:save_pvp_areas()
 				pvp_areas_players[name] = nil
 				minetest.chat_send_player(name, "Area set.")
 			end
@@ -110,12 +129,12 @@ minetest.register_chatcommand("pvp_areas", {
 				pvp_areas_store:remove_area(n)
 				if pvp_areas_store:get_area(n + 1) then
 					-- Insert last entry in new empty (removed) slot.
-					local a = pvp_areas_store:get_area(#pvp_areas - 1)
-					pvp_areas_store:remove_area(#pvp_areas - 1)
+					local a = pvp_areas_store:get_area(#pvp_areas_table - 1)
+					pvp_areas_store:remove_area(#pvp_areas_table - 1)
 					pvp_areas_store:insert_area(a.min, a.max, "pvp_areas", n)
 				end
-				update_pvp_areas()
-				save_pvp_areas()
+				pvp_areas:update_pvp_areas()
+				pvp_areas:save_pvp_areas()
 				minetest.chat_send_player(name, "Removed " .. tostring(n))
 			else
 				minetest.chat_send_player(name, "Invalid argument.  You must enter a valid area identifier.")
@@ -123,7 +142,7 @@ minetest.register_chatcommand("pvp_areas", {
 		elseif param ~= "" then
 			minetest.chat_send_player(name, "Invalid usage.  Type \"/help pvp_areas\" for more information.")
 		else
-			for k, v in pairs(pvp_areas) do
+			for k, v in pairs(pvp_areas_table) do
 				minetest.chat_send_player(name, k - 1 .. ": " ..
 						minetest.pos_to_string(v.min) .. " " ..
 						minetest.pos_to_string(v.max))
@@ -145,13 +164,29 @@ if safemode then
 	savemodeToString = "WAHR"
 end
 
+--function pvp_areas.areaExists(pos)
+--        for k, v in pairs(pvp_areas_store:get_areas_for_pos(pos)) do
+--                if k then
+--                        --minetest.chat_send_player(playername, "in loop - safemode"..savemodeToString.." isPlayer "..IsPlayerToString)
+--                        return true --KILL_NO
+--                end
+--        end
+--        return false
+--end
+
 -- Register punchplayer callback.
 minetest.register_on_punchplayer(function(player, hitter, time_from_last_punch, tool_capabilities, dir, damage)
+             
 	local isPlayer = hitter:is_player()
 	
-	if hitter:is_player() == false then
-		return mobsDoNoDamage -- if this is a MOB then give Damage
-	end
+        
+        if  (hitter:is_player() == false) then
+	 hitArgs=mysplit(hitter:get_entity_name(),":")
+         if (hitArgs[1]~="rangedweapons") then
+	  return mobsDoNoDamage -- if this is a MOB then give Damage
+         end
+        end
+
 	--[[
 	local IsPlayerToString = "PLAYER"	-- only for debugging
 	if isplayer then 
@@ -165,10 +200,12 @@ minetest.register_on_punchplayer(function(player, hitter, time_from_last_punch, 
 	local playername = player:get_player_name() 
 	for k, v in pairs(pvp_areas_store:get_areas_for_pos(player:getpos())) do
 		if k then
+			--hitter:get_entity_name()
 			--minetest.chat_send_player(playername, "in loop - safemode"..savemodeToString.." isPlayer "..IsPlayerToString)
 			return AREA_ACTIVATE --KILL_NO
 		end
 	end
+        --minetest.chat_send_all("Player "..player:get_player_name().." hit by "..hitter:get_entity_name()  )
 	--minetest.chat_send_player(playername, "after - safemode"..savemodeToString.." isPlayer "..IsPlayerToString)
 	return AREA_NOACTIVATE --KILL_OK
 end)
